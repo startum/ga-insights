@@ -3,13 +3,21 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 
-export async function GET() {
-  try {
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-    const { data: { session } } = await supabase.auth.getSession();
+export const dynamic = 'force-dynamic';
 
-    if (!session) {
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const range = searchParams.get('range') || '7d';
+
+    const cookieStore = cookies();
+    const supabase = createRouteHandlerClient({ 
+      cookies: () => cookieStore 
+    });
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
@@ -17,20 +25,18 @@ export async function GET() {
     const { data: settings, error: settingsError } = await supabase
       .from('user_settings')
       .select('ga_property_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single();
 
     if (settingsError || !settings?.ga_property_id) {
       return NextResponse.json({ error: "No property selected" }, { status: 400 });
     }
 
-    console.log('Using property ID:', settings.ga_property_id);
-
     // Get the access token
     const { data: tokenData, error: tokenError } = await supabase
       .from('google_tokens')
       .select('access_token')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single();
 
     if (tokenError || !tokenData?.access_token) {
@@ -45,16 +51,26 @@ export async function GET() {
       auth
     });
 
-    // Make sure we're using the numeric property ID
-    const propertyId = settings.ga_property_id;
-    console.log('Running report for property:', `properties/${propertyId}`);
+    // Configure date ranges based on selected range
+    let dateRange;
+    switch (range) {
+      case '24h':
+        dateRange = { startDate: "1daysAgo", endDate: "today" };
+        break;
+      case '28d':
+        dateRange = { startDate: "28daysAgo", endDate: "today" };
+        break;
+      case '7d':
+      default:
+        dateRange = { startDate: "7daysAgo", endDate: "today" };
+    }
 
     const report = await analyticsData.properties.runReport({
-      property: `properties/${propertyId}`,
+      property: `properties/${settings.ga_property_id}`,
       requestBody: {
         dimensions: [{ name: "date" }],
         metrics: [{ name: "sessions" }],
-        dateRanges: [{ startDate: "7daysAgo", endDate: "yesterday" }]
+        dateRanges: [dateRange]
       }
     });
 

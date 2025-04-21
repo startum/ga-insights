@@ -27,6 +27,8 @@ ChartJS.register(
   Legend
 );
 
+type DateRange = '24h' | '7d' | '28d';
+
 interface AnalyticsData {
   dimensionHeaders: Array<{ name: string }>;
   metricHeaders: Array<{ name: string; type: string }>;
@@ -46,17 +48,18 @@ export default function DashboardClient({ propertyId }: { propertyId: string }) 
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange>('7d');
 
   useEffect(() => {
     if (propertyId) {
       fetchAnalyticsData();
     }
-  }, [propertyId]);
+  }, [propertyId, dateRange]);
 
   const fetchAnalyticsData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/analytics/data');
+      const response = await fetch(`/api/analytics/data?range=${dateRange}`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch analytics data');
@@ -102,7 +105,10 @@ export default function DashboardClient({ propertyId }: { propertyId: string }) 
     const year = dateString.substring(0, 4);
     const month = dateString.substring(4, 6);
     const day = dateString.substring(6, 8);
-    return format(parseISO(`${year}-${month}-${day}`), 'MMM d');
+    const date = parseISO(`${year}-${month}-${day}`);
+    return dateRange === '24h' 
+      ? format(date, 'HH:mm')
+      : format(date, 'MMM d');
   };
 
   const getChartData = () => {
@@ -134,7 +140,7 @@ export default function DashboardClient({ propertyId }: { propertyId: string }) 
       },
       title: {
         display: true,
-        text: 'Daily Sessions'
+        text: 'Sessions Over Time'
       }
     },
     scales: {
@@ -144,6 +150,14 @@ export default function DashboardClient({ propertyId }: { propertyId: string }) 
           precision: 0
         }
       }
+    }
+  };
+
+  const getRangeLabel = (range: DateRange) => {
+    switch (range) {
+      case '24h': return 'Last 24 Hours';
+      case '7d': return 'Last 7 Days';
+      case '28d': return 'Last 28 Days';
     }
   };
 
@@ -172,14 +186,31 @@ export default function DashboardClient({ propertyId }: { propertyId: string }) 
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Analytics Overview</h2>
-          <p className="text-sm text-gray-500">Last 7 days of sessions</p>
+          <p className="text-sm text-gray-500">{getRangeLabel(dateRange)}</p>
         </div>
-        <button
-          onClick={handleResetProperty}
-          className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-        >
-          Change Property
-        </button>
+        <div className="flex items-center space-x-4">
+          <div className="flex rounded-md shadow-sm" role="group">
+            {(['24h', '7d', '28d'] as const).map((range) => (
+              <button
+                key={range}
+                onClick={() => setDateRange(range)}
+                className={`px-4 py-2 text-sm font-medium ${
+                  dateRange === range
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                } border border-gray-300 first:rounded-l-md last:rounded-r-md -ml-px first:ml-0`}
+              >
+                {range === '24h' ? '24h' : range === '7d' ? '7d' : '28d'}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleResetProperty}
+            className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Change Property
+          </button>
+        </div>
       </div>
       
       {chartData && (
